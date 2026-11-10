@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ARAnchorManager } from './ARAnchorManager.js';
 
-// Initialisation de la scène Three.js
 const canvas = document.querySelector('#ar-canvas');
 const statusBadge = document.querySelector('#status-badge');
 
@@ -18,7 +17,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-// Éclairage ambiant et directionnel pour environnement extérieur
+// Éclairage
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
 scene.add(ambientLight);
 
@@ -26,44 +25,68 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
 dirLight.position.set(5, 10, 7);
 scene.add(dirLight);
 
-// Groupe du modèle 3D désolidarisé
+// Modèle 3D et Ancrage
 const modelGroup = new THREE.Group();
 scene.add(modelGroup);
 
-// Gestionnaire d'ancrage hybride
 const anchorManager = new ARAnchorManager(scene, modelGroup);
 
-// Chargement du modèle 3D du site en forêt
 const loader = new GLTFLoader();
 loader.load(
     'models/foret_site.glb',
-    (gltf) => {
-        modelGroup.add(gltf.scene);
-        console.log('Modèle site forêt chargé avec succès.');
-    },
-    (xhr) => {
-        console.log(`Chargement 3D: ${Math.round((xhr.loaded / xhr.total) * 100)}%`);
-    },
-    (error) => {
-        console.warn('Fichier foret_site.glb non trouvé dans ./models/. Ajoutez votre fichier .glb.');
-    }
+    (gltf) => { modelGroup.add(gltf.scene); },
+    null,
+    (err) => { console.warn('Ajoutez votre fichier foret_site.glb dans /models/'); }
 );
 
-// Noeud de tracking brut du marqueur 3D
 const trackerNode = new THREE.Object3D();
 scene.add(trackerNode);
-
-// Variable d'état pour la détection
 let trackerIsVisible = false;
 
-// Redimensionnement réactif
+// -------------------------------------------------------------
+// Activation de la caméra arrière et injection en fond Three.js
+// -------------------------------------------------------------
+async function initWebcam() {
+    const video = document.createElement('video');
+    video.setAttribute('autoplay', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false
+        });
+        
+        video.srcObject = stream;
+        await video.play();
+
+        const videoTexture = new THREE.VideoTexture(video);
+        videoTexture.colorSpace = THREE.SRGBColorSpace;
+        scene.background = videoTexture;
+
+        if (statusBadge) {
+            statusBadge.textContent = 'Caméra active - Recherche du cube...';
+        }
+    } catch (err) {
+        console.error('Erreur d\'accès à la caméra :', err);
+        if (statusBadge) {
+            statusBadge.textContent = 'Erreur : Caméra refusée ou non supportée';
+            statusBadge.className = 'badge-searching';
+        }
+    }
+}
+
+initWebcam();
+
+// Redimensionnement de la fenêtre
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Boucle d'animation principale
+// Boucle d'animation
 function animate() {
     if (trackerIsVisible) {
         anchorManager.updateFromTracker(trackerNode);
@@ -73,9 +96,7 @@ function animate() {
         }
     }
 
-    // Le lissage s'exécute à chaque frame
     anchorManager.updateFrame();
-
     renderer.render(scene, camera);
 }
 
